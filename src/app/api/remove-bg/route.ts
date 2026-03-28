@@ -1,23 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
 export async function POST(request: NextRequest) {
   console.log('📍 API route called');
   console.log('📋 Content-Type:', request.headers.get('content-type'));
   
   try {
-    // 尝试读取请求体
-    const contentType = request.headers.get('content-type') || '';
-    
-    if (!contentType.includes('multipart/form-data')) {
-      console.log('❌ Invalid Content-Type:', contentType);
-      return NextResponse.json(
-        { error: 'Invalid Content-Type. Expected multipart/form-data.' },
-        { status: 400 }
-      );
-    }
-
     const formData = await request.formData();
     const file = formData.get('file') as File;
 
@@ -55,12 +44,23 @@ export async function POST(request: NextRequest) {
     const apiKey = process.env.REMOVEBG_API_KEY;
     console.log('🔑 API Key configured:', !!apiKey);
     
-    // Convert file to base64
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: 'API key not configured. Please set REMOVEBG_API_KEY environment variable.' },
+        { status: 500 }
+      );
+    }
+
+    // Convert file to base64 (Edge Runtime compatible way)
     const buffer = await file.arrayBuffer();
-    const base64 = Buffer.from(buffer).toString('base64');
+    const base64 = btoa(
+      new Uint8Array(buffer).reduce(
+        (data, byte) => data + String.fromCharCode(byte),
+        ''
+      )
+    );
 
     console.log('📤 Calling Remove.bg API...');
-    console.log('📊 Base64 length:', base64.length);
 
     // Call Remove.bg API using form-data format
     const formDataForApi = new FormData();
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
     const response = await fetch('https://api.remove.bg/v1.0/removebg', {
       method: 'POST',
       headers: {
-        'X-Api-Key': apiKey || '',
+        'X-Api-Key': apiKey,
       },
       body: formDataForApi,
     });
@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
       const errorText = await response.text();
       console.error('❌ Remove.bg API error:', errorText);
       return NextResponse.json(
-        { error: `Remove.bg API error: ${response.status} - ${errorText}` },
+        { error: `Remove.bg API error: ${response.status}` },
         { status: response.status }
       );
     }
@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// 处理 OPTIONS 请求（CORS preflight）
+// Handle OPTIONS request (CORS preflight)
 export async function OPTIONS() {
   return new NextResponse(null, {
     status: 200,
