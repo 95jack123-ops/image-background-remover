@@ -1,7 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import Image from 'next/image';
+import { useState, useCallback, useRef } from 'react';
 
 export default function Home() {
   const [originalImage, setOriginalImage] = useState<string | null>(null);
@@ -9,8 +8,11 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string>('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = useCallback(async (file: File) => {
+    console.log('📁 File selected:', file.name, file.type, file.size);
+
     // Validate file type
     const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
     if (!allowedTypes.includes(file.type)) {
@@ -32,7 +34,13 @@ export default function Home() {
     // Create preview
     const reader = new FileReader();
     reader.onload = (e) => {
-      setOriginalImage(e.target?.result as string);
+      const dataUrl = e.target?.result as string;
+      console.log('📷 Image preview created');
+      setOriginalImage(dataUrl);
+    };
+    reader.onerror = (err) => {
+      console.error('❌ FileReader error:', err);
+      setError('Failed to read file');
     };
     reader.readAsDataURL(file);
 
@@ -42,20 +50,31 @@ export default function Home() {
       const formData = new FormData();
       formData.append('file', file);
 
+      console.log('📤 Sending request to API...');
       const response = await fetch('/api/remove-bg', {
         method: 'POST',
         body: formData,
       });
 
+      console.log('📥 Response status:', response.status);
+
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to process image');
+        const text = await response.text();
+        console.error('❌ API error:', text);
+        try {
+          const data = JSON.parse(text);
+          throw new Error(data.error || 'Failed to process image');
+        } catch {
+          throw new Error(text || 'Failed to process image');
+        }
       }
 
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
+      console.log('✅ Image processed successfully');
       setProcessedImage(url);
     } catch (err) {
+      console.error('❌ Processing error:', err);
       setError(err instanceof Error ? err.message : 'Failed to process image');
     } finally {
       setIsLoading(false);
@@ -65,6 +84,7 @@ export default function Home() {
   const handleDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault();
+      console.log('🎯 File dropped');
       const file = e.dataTransfer.files[0];
       if (file) handleFileSelect(file);
     },
@@ -77,11 +97,17 @@ export default function Home() {
 
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
+      console.log('📂 File input changed');
       const file = e.target.files?.[0];
       if (file) handleFileSelect(file);
     },
     [handleFileSelect]
   );
+
+  const handleUploadClick = useCallback(() => {
+    console.log('🖱️ Upload area clicked');
+    fileInputRef.current?.click();
+  }, []);
 
   const handleDownload = useCallback(() => {
     if (!processedImage) return;
@@ -98,6 +124,9 @@ export default function Home() {
     setProcessedImage(null);
     setError(null);
     setFileName('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   }, []);
 
   return (
@@ -118,27 +147,27 @@ export default function Home() {
           // Upload Area
           <div className="max-w-2xl mx-auto">
             <div
+              onClick={handleUploadClick}
               onDrop={handleDrop}
               onDragOver={handleDragOver}
               className="border-2 border-dashed border-purple-500/50 rounded-2xl p-16 text-center bg-slate-800/50 backdrop-blur-sm hover:border-purple-400 transition-all cursor-pointer"
             >
               <input
+                ref={fileInputRef}
                 type="file"
                 accept="image/png,image/jpeg,image/jpg,image/webp"
                 onChange={handleInputChange}
                 className="hidden"
                 id="file-input"
               />
-              <label htmlFor="file-input" className="cursor-pointer">
-                <div className="text-6xl mb-4">🖼️</div>
-                <p className="text-2xl text-white mb-2">
-                  Drop your image here
-                </p>
-                <p className="text-gray-400 mb-4">or click to browse</p>
-                <p className="text-sm text-gray-500">
-                  Supports PNG, JPG, JPEG, WEBP • Max 10MB
-                </p>
-              </label>
+              <div className="text-6xl mb-4">🖼️</div>
+              <p className="text-2xl text-white mb-2">
+                Drop your image here
+              </p>
+              <p className="text-gray-400 mb-4">or click to browse</p>
+              <p className="text-sm text-gray-500">
+                Supports PNG, JPG, JPEG, WEBP • Max 10MB
+              </p>
             </div>
 
             {error && (
@@ -157,11 +186,10 @@ export default function Home() {
                   📷 Original
                 </h2>
                 <div className="aspect-square relative rounded-lg overflow-hidden bg-slate-700">
-                  <Image
+                  <img
                     src={originalImage}
                     alt="Original"
-                    fill
-                    className="object-contain"
+                    className="w-full h-full object-contain"
                   />
                 </div>
                 <p className="text-gray-400 text-sm mt-2 truncate">
@@ -196,11 +224,10 @@ export default function Home() {
                       </div>
                     </div>
                   ) : processedImage ? (
-                    <Image
+                    <img
                       src={processedImage}
                       alt="Processed"
-                      fill
-                      className="object-contain"
+                      className="w-full h-full object-contain"
                     />
                   ) : (
                     <div className="absolute inset-0 flex items-center justify-center">
